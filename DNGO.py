@@ -60,7 +60,7 @@ class DG:
             y_pred = self.network(self.X)
             print(y_pred.shape)
             print(self.Y.shape)
-            loss = loss_fn(y_pred.view(-1), self.Y)
+            loss = loss_fn(y_pred.view(-1), self.Y.view(-1))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
