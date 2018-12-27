@@ -71,8 +71,8 @@ class DG:
         
         
     def marginal_log_likelihood(self, theta): # theta are the hyperparameters to be optimized
-        print(theta)
-        print(type(theta))
+        #print(theta)
+        #print(type(theta))
         if np.any((-5 > np.array(theta))) + np.any((np.array(theta) > 10)):
             return -1e25
         alpha = np.exp(theta[0]) # it is not clear why here we calculate the exponential
