@@ -9,7 +9,7 @@ class DG:
     def __init__(self, num_epochs, learning_rate, H, D, 
                  alpha = 1.0, beta = 1000):
         """
-        A pytorch implementation of Deep Networks for Global Optimizatin [1]. This module performas Bayesian Linear Regression with basis function extracted from a
+        A pytorch implementation of Deep Networks for Global Optimizatin [1]. This module performs Bayesian Linear Regression with basis function extracted from a
         neural network.
         
         [1] J. Snoek, O. Rippel, K. Swersky, R. Kiros, N. Satish, 
