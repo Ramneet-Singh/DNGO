@@ -58,9 +58,9 @@ class DG:
         optimizer = torch.optim.Adam(self.network.parameters(), lr=self.init_learning_rate)
         for t in range(self.num_epochs):
             y_pred = self.network(self.X)
-            print(y_pred.shape)
-            print(self.Y.shape)
-            loss = loss_fn(y_pred, self.Y)
+            #print(y_pred.shape)
+            #print(self.Y.shape)
+            loss = loss_fn(y_pred.view(-1), self.Y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
