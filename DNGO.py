@@ -89,7 +89,7 @@ class DG:
             N = self.X.size()[0]
             Identity = torch.eye(self.phi.size()[1])
             self.phi_T = torch.transpose(self.phi, 0, 1)
-            self.K = torch.addmm(Identity, self.phi_T, self.phi, beta, alpha)
+            self.K = torch.addmm(Identity, self.phi_T, self.phi, beta=beta, alpha=alpha)
             self.K_inverse = torch.inverse(self.K)
             m = beta*torch.mm(self.K_inverse, self.phi_T)
             self.m[:, output_idx] = torch.mv(m, Ydata)
