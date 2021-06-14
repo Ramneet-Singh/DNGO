@@ -55,7 +55,7 @@ class DG:
         features = X.shape[1]
         targets = Y.shape[1]
         self.network = Net(features, self.H, self.D, targets) # [Ramneet-Singh]: Modified this to handle multiple outputs
-        loss_fn = torch.nn.MSELoss(size_average=True)
+        loss_fn = torch.nn.MSELoss(reduction='mean')
         optimizer = torch.optim.Adam(self.network.parameters(), lr=self.init_learning_rate)
         for t in range(self.num_epochs):
             y_pred = self.network(self.X)
@@ -76,8 +76,8 @@ class DG:
         # self.hypers = [np.exp(res[0]), np.exp(res[1])]
         return(self.hypers)
     
-    def marginal_log_likelihood_wrapper(output_idx):
-        def marginal_log_likelihood(self, theta): # theta are the hyperparameters to be optimized
+    def marginal_log_likelihood_wrapper(self, output_idx):
+        def marginal_log_likelihood(theta): # theta are the hyperparameters to be optimized
             #print(theta)
             #print(type(theta))
             if np.any((-5 > np.array(theta))) + np.any((np.array(theta) > 10)):
