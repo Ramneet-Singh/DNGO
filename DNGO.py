@@ -53,47 +53,55 @@ class DG:
         self.X = Variable(torch.from_numpy(normX).float())
         self.Y = Variable(torch.from_numpy(normY).float(), requires_grad=False)
         features = X.shape[1]
-        self.network = Net(features, self.H, self.D, 1) # here we suppose that D_out = 1
+        targets = Y.shape[1]
+        self.network = Net(features, self.H, self.D, targets) # [Ramneet-Singh]: Modified this to handle multiple outputs
         loss_fn = torch.nn.MSELoss(size_average=True)
         optimizer = torch.optim.Adam(self.network.parameters(), lr=self.init_learning_rate)
         for t in range(self.num_epochs):
             y_pred = self.network(self.X)
             #print(y_pred.shape)
             #print(self.Y.shape)
-            loss = loss_fn(y_pred.view(-1), self.Y.view(-1))
+            # [Ramneet-Singh]: Changing this to handle multiple outputs
+            loss = loss_fn(y_pred.view(-1, targets), self.Y.view(-1, targets))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         self.phi = self.network.PHI(self.X).data
-        res = optimize.fmin(self.marginal_log_likelihood, np.random.rand(2))
-        self.hypers = [np.exp(res[0]), np.exp(res[1])]
+
+        # Find the hyperparameters through optimization for each output variable
+        for i in range(targets):
+            res = optimize.fmin(self.marginal_log_likelihood_wrapper(i), np.random.rand(2))
+            self.hypers[2*i], self.hypers[2*i+1] = np.exp(res[0]), np.exp(res[1]) 
+        # res = optimize.fmin(self.marginal_log_likelihood, np.random.rand(2))
+        # self.hypers = [np.exp(res[0]), np.exp(res[1])]
         return(self.hypers)
-        
-        
-    def marginal_log_likelihood(self, theta): # theta are the hyperparameters to be optimized
-        #print(theta)
-        #print(type(theta))
-        if np.any((-5 > np.array(theta))) + np.any((np.array(theta) > 10)):
-            return -1e25
-        alpha = np.exp(theta[0]) # it is not clear why here we calculate the exponential
-        beta = np.exp(theta[1])
-        Ydata = self.Y.data # for the bayesian part, we do not need Y to be a variable anymore
-        D = self.X.size()[1]
-        N = self.X.size()[0]
-        Identity = torch.eye(self.phi.size()[1])
-        self.phi_T = torch.transpose(self.phi, 0, 1)
-        self.K = torch.addmm(beta, Identity, alpha, self.phi_T, self.phi)
-        self.K_inverse = torch.inverse(self.K)
-        m = beta*torch.mm(self.K_inverse, self.phi_T)
-        self.m = torch.mv(m, Ydata)
-        mll = (D/2.)*np.log(alpha)
-        mll += (N/2.)*np.log(beta)
-        mll -= (N/2.) * np.log(2*np.pi)
-        mll -= (beta/2.)* torch.norm(Ydata - torch.mv(self.phi, self.m),2)
-        mll -= (alpha/2.) * torch.dot(self.m,self.m)
-        Knumpy = self.K.numpy() # convert K to numpy for determinant calculation
-        mll -= 0.5*np.log(np.linalg.det(Knumpy))
-        return -mll
+    
+    def marginal_log_likelihood_wrapper(output_idx):
+        def marginal_log_likelihood(self, theta): # theta are the hyperparameters to be optimized
+            #print(theta)
+            #print(type(theta))
+            if np.any((-5 > np.array(theta))) + np.any((np.array(theta) > 10)):
+                return -1e25
+            alpha = np.exp(theta[0]) # it is not clear why here we calculate the exponential
+            beta = np.exp(theta[1])
+            Ydata = self.Y.data[:, output_idx] # for the bayesian part, we do not need Y to be a variable anymore
+            D = self.X.size()[1]
+            N = self.X.size()[0]
+            Identity = torch.eye(self.phi.size()[1])
+            self.phi_T = torch.transpose(self.phi, 0, 1)
+            self.K = torch.addmm(Identity, self.phi_T, self.phi, beta, alpha)
+            self.K_inverse = torch.inverse(self.K)
+            m = beta*torch.mm(self.K_inverse, self.phi_T)
+            self.m[:, output_idx] = torch.mv(m, Ydata)
+            mll = (D/2.)*np.log(alpha)
+            mll += (N/2.)*np.log(beta)
+            mll -= (N/2.) * np.log(2*np.pi)
+            mll -= (beta/2.)* torch.norm(Ydata - torch.mv(self.phi, self.m[:, output_idx]),2)
+            mll -= (alpha/2.) * torch.dot(self.m[:, output_idx],self.m[:, output_idx])
+            Knumpy = self.K.numpy() # convert K to numpy for determinant calculation
+            mll -= 0.5*np.log(np.linalg.det(Knumpy))
+            return -mll
+        return marginal_log_likelihood
     
     def predict(self, xtest):
         mx = Variable(torch.from_numpy(np.array(self._mx)).float())
@@ -101,35 +109,53 @@ class DG:
         xtest = (xtest - mx)/sx
         phi_test = self.network.PHI(xtest).data
         phi_T = torch.transpose(phi_test, 0, 1)
-        self.marginal_log_likelihood(self.hypers)
-        mean = np.dot(phi_test.numpy(), self.m)
-        mean = mean*self._sy+self._my
-        var = np.diag(np.dot(phi_test.numpy(),np.dot(self.K_inverse.numpy(), phi_T.numpy())))+(1./self.hypers[1])
-        v = var
-        v *=(self._sy**2)
-        return mean, var
+        # Predict for each output variable
+        y_mean = []
+        y_var = []
+        for i in range(len(self._my)):
+            self.marginal_log_likelihood_wrapper(i)(self.hypers[2*i : 2*i+2])
+            mean = np.dot(phi_test.numpy(), self.m[:, i])
+            mean = mean*self._sy[i] + self._my[i]
+            var = np.diag(np.dot(phi_test.numpy(),np.dot(self.K_inverse.numpy(), phi_T.numpy())))+(1./self.hypers[2*i + 1])
+            y_mean.append(mean)
+            y_var.append(var)
+
+        return y_mean, y_var
     
+    # [Ramneet-Singh]: Modifying to handle multiple outputs
     def normalize(self, x, y):
-        col=x.shape[1]
-        row=x.shape[0]
+        col_x=x.shape[1]
+        row_x=x.shape[0]
         mx=list()
         sx=list()
-        for i in range(col):
+        for i in range(col_x):
             mx.append(np.mean(x[:,i]))
             sx.append(np.std(x[:,i],ddof=1))
-        my=np.mean(y)
-        sy=np.std(y,ddof=1)
         self._mx=mx
         self._sx=sx
-        self._my=my
-        self._sy=sy
-        mx_mat=np.mat(np.zeros((row,col)))
-        sx_mat=np.mat(np.zeros((row,col)))
-        for i in range(row):
+        mx_mat=np.mat(np.zeros((row_x,col_x)))
+        sx_mat=np.mat(np.zeros((row_x,col_x)))
+        for i in range(row_x):
             mx_mat[i,:]=mx
             sx_mat[i,:]=sx
         x_nom=(x-mx_mat)/sx_mat
-        y_nom=(y-self._my)/self._sy
+
+        col_y=y.shape[1]
+        row_y=y.shape[0]
+        my=list()
+        sy=list()
+        for i in range(col_y):
+            my.append(np.mean(y[:,i]))
+            sy.append(np.std(y[:,i],ddof=1))
+        self._my=my
+        self._sy=sy
+        my_mat=np.mat(np.zeros((row_y,col_y)))
+        sy_mat=np.mat(np.zeros((row_y,col_y)))
+        for i in range(row_y):
+            my_mat[i,:]=my
+            sy_mat[i,:]=sy
+        y_nom=(y-my_mat)/sy_mat
+
         return x_nom,y_nom
         
         
@@ -147,3 +173,28 @@ class DG:
         
         
         
+# def marginal_log_likelihood(self, theta): # theta are the hyperparameters to be optimized
+#             #print(theta)
+#             #print(type(theta))
+#             if np.any((-5 > np.array(theta))) + np.any((np.array(theta) > 10)):
+#                 return -1e25
+#             alpha = np.exp(theta[0]) # it is not clear why here we calculate the exponential
+#             beta = np.exp(theta[1])
+#             Ydata = self.Y.data # for the bayesian part, we do not need Y to be a variable anymore
+#             D = self.X.size()[1]
+#             N = self.X.size()[0]
+#             Identity = torch.eye(self.phi.size()[1])
+#             self.phi_T = torch.transpose(self.phi, 0, 1)
+#             self.K = torch.addmm(beta, Identity, alpha, self.phi_T, self.phi)
+#             self.K_inverse = torch.inverse(self.K)
+#             m = beta*torch.mm(self.K_inverse, self.phi_T)
+#             # [Ramneet-Singh]: Changed to handle multiple targets in output
+#             self.m = torch.mm(m, Ydata)
+#             mll = (D/2.)*np.log(alpha)*np.ones(Ydata.shape[1])
+#             mll += (N/2.)*np.log(beta)*np.ones(Ydata.shape[1])
+#             mll -= (N/2.) * np.log(2*np.pi)*np.ones(Ydata.shape[1])
+#             mll -= (beta/2.)* torch.linalg.norm(Ydata - torch.mm(self.phi, self.m), dim=0)
+#             mll -= (alpha/2.) * (torch.matmul(torch.transpose(self.m, 0, 1), self.m).diag())
+#             Knumpy = self.K.numpy() # convert K to numpy for determinant calculation
+#             mll -= 0.5*np.log(np.linalg.det(Knumpy))*np.ones(Ydata.shape[1])
+#             return -mll
