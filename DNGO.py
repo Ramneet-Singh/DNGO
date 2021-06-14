@@ -32,6 +32,7 @@ class DG:
         self.H = H # the neural number of the middle layers
         self.D = D # size of the last hidden layer
         self.m = torch.zeros([D, D_out])
+        self.hypers = [1.0,1000]*D_out
 
     def train(self, X, Y):
         """
