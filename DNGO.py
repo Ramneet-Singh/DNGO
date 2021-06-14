@@ -6,7 +6,7 @@ from scipy import optimize
 
 class DG:
     
-    def __init__(self, num_epochs, learning_rate, H, D, 
+    def __init__(self, num_epochs, learning_rate, H, D, D_out, 
                  alpha = 1.0, beta = 1000):
         """
         A pytorch implementation of Deep Networks for Global Optimization [1]. This module performs Bayesian Linear Regression with basis function extracted from a
@@ -31,7 +31,8 @@ class DG:
         self.num_epochs = num_epochs
         self.H = H # the neural number of the middle layers
         self.D = D # size of the last hidden layer
-        
+        self.m = torch.zeros([D, D_out])
+
     def train(self, X, Y):
         """
         Trains the model on the provided data.
